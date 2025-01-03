@@ -26,6 +26,30 @@ public class User : IObserver
 }
 public record AccessRight(bool IsReadOnly);
 
+// Logger class to handle logging
+public class Logger
+{
+    private static readonly string LogFile = "collaborative_system.log";
+    private static readonly object LockObj = new object();
+
+    public static void Log(string message)
+    {
+        lock (LockObj)
+        {
+            try
+            {
+                string logMessage = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} - {message}";
+                File.AppendAllText(LogFile, logMessage + Environment.NewLine);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error writing to log file: {ex.Message}");
+            }
+        }
+    }
+}
+
+
 // Observer Pattern for collaboration
 public interface IObserver
 {
@@ -75,8 +99,18 @@ public class CollaborativeSystem : ISubject
     private IAccessStrategy _accessStrategy = new DefaultAccessStrategy();
 
     // Observer Pattern implementation
-    public void Attach(IObserver observer) => _observers.Add(observer);
-    public void Detach(IObserver observer) => _observers.Remove(observer);
+    public void Attach(IObserver observer)
+    {
+        _observers.Add(observer);
+        Logger.Log($"Observer {(observer as User)?.Name ?? "Unknown"} attached to the system");
+    }
+
+    public void Detach(IObserver observer)
+    {
+        _observers.Remove(observer);
+        Logger.Log($"Observer {(observer as User)?.Name ?? "Unknown"} detached from the system");
+    }
+
     public void Notify(string sheetName, (int, int) position, string value)
     {
         foreach (var observer in _observers)
@@ -92,8 +126,10 @@ public class CollaborativeSystem : ISubject
         {
             var user = new User(name);
             _users[name] = user;
+            Logger.Log($"User {name} created");
             return Option.Some(user);
         }
+        Logger.Log($"Failed to create user {name} - user already exists");
         return Option.None<User>();
     }
 
@@ -103,8 +139,10 @@ public class CollaborativeSystem : ISubject
         {
             var sheet = new Sheet(name, user, new Dictionary<(int, int), Cell>());
             _sheets[name] = sheet;
+            Logger.Log($"Sheet {name} created by user {user}");
             return Option.Some(sheet);
         }
+        Logger.Log($"Failed to create sheet {name} for user {user}");
         return Option.None<Sheet>();
     }
 
@@ -174,10 +212,14 @@ public class CollaborativeSystem : ISubject
     public Option<Sheet> UpdateCell(string user, string sheetName, int row, int col, string value)
     {
         if (!_sheets.ContainsKey(sheetName))
+        {
+            Logger.Log($"Failed to update cell - sheet {sheetName} not found");
             return Option.None<Sheet>();
+        }
 
         if (!_accessStrategy.CanEdit(user, sheetName))
         {
+            Logger.Log($"Access denied - user {user} attempted to edit sheet {sheetName}");
             Console.WriteLine("You have ReadOnly access. Editing is not permitted. Please contact the administrator.");
             return Option.None<Sheet>();
         }
@@ -191,6 +233,7 @@ public class CollaborativeSystem : ISubject
 
         var updatedSheet = sheet with { Cells = newCells };
         _sheets[sheetName] = updatedSheet;
+        Logger.Log($"Cell updated in sheet {sheetName} at position ({row},{col}) with value {value} by user {user}");
         Notify(sheetName, (row, col), evaluatedValue.ToString());
         return Option.Some(updatedSheet);
     }
@@ -211,6 +254,7 @@ public class CollaborativeSystem : ISubject
         if (_accessStrategy is RestrictedAccessStrategy strategy)
         {
             strategy.SetAccess(user, sheetName, isReadOnly);
+            Logger.Log($"Access rights updated for user {user} on sheet {sheetName} - ReadOnly: {isReadOnly}");
         }
     }
 }
@@ -292,12 +336,24 @@ class Program
                 case "1":
                     Console.Write("Enter user name: ");
                     var userName = Console.ReadLine();
-                    system.CreateUser(userName);
-                    Console.WriteLine($"Create a user named \"{userName}\".");
+                    var newUser = system.CreateUser(userName);
+                    newUser.Match<bool>(
+                        user =>
+                        {
+                            // Attach the user as an observer when created
+                            system.Attach(user);
+                            Console.WriteLine($"Created and attached user {userName}");
+                            return true;
+                        },
+                        () =>
+                        {
+                            Console.WriteLine("Failed to create user");
+                            return false;
+                        });
                     break;
 
                 case "2":
-                    Console.Write("> ");
+                    Console.Write("Enter username and sheet name (e.g., Kevin SheetA) > ");
                     var input = Console.ReadLine().Split(' ');
                     var owner = input[0];
                     var sheetName = input[1];
@@ -306,7 +362,7 @@ class Program
                     break;
 
                 case "3":
-                    Console.Write("> ");
+                    Console.Write("Enter username and sheet name (e.g., Kevin SheetA) > ");
                     var checkInput = Console.ReadLine().Split(' ');
                     var checkOwner = checkInput[0];
                     var checkSheetName = checkInput[1];
@@ -332,12 +388,12 @@ class Program
                     break;
 
                 case "4":
-                    Console.Write("> ");
+                    Console.Write("Enter username and sheet name (e.g., Kevin SheetA) > ");
                     var updateInput = Console.ReadLine().Split(' ');
                     var updateUser = updateInput[0];
                     var updateSheet = updateInput[1];
                     PrintSheet(system, updateSheet);
-                    Console.Write("> ");
+                    Console.Write("Enter position and value to update (e.g., 1 2 3) > ");
                     var valueInput = Console.ReadLine().Split(' ');
                     if (valueInput.Length == 3)
                     {
@@ -372,13 +428,17 @@ class Program
                     var shareWith = Console.ReadLine();
                     system.CreateUser(shareWith);
                     system.SetAccess(shareSheet, shareWith, false);
-                    Console.WriteLine($"Shared sheet {shareSheet} with {shareWith}");
+                    Console.WriteLine($"{shareOwner} shared sheet {shareSheet} with {shareWith}");
                     break;
 
                 case "7":
+                    Logger.Log("System shutdown");
                     running = false;
                     break;
             }
+
+            Console.WriteLine();
+        
         }
     }
 }
