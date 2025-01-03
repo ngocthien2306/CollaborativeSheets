@@ -249,13 +249,31 @@ public class CollaborativeSystem : ISubject
         _accessStrategy = new DefaultAccessStrategy();
     }
 
-    public void SetAccess(string sheetName, string user, bool isReadOnly)
+    public bool SetAccess(string sheetName, string user, bool isReadOnly)
     {
+        // Validate if sheet exists
+        if (!_sheets.ContainsKey(sheetName))
+        {
+            Logger.Log($"Failed to set access - sheet {sheetName} not found");
+            return false;
+        }
+
+        // Validate if user exists 
+        if (!_users.ContainsKey(user))
+        {
+            Logger.Log($"Failed to set access - user {user} not found");
+            return false;
+        }
+
         if (_accessStrategy is RestrictedAccessStrategy strategy)
         {
             strategy.SetAccess(user, sheetName, isReadOnly);
             Logger.Log($"Access rights updated for user {user} on sheet {sheetName} - ReadOnly: {isReadOnly}");
+            return true;
         }
+
+        Logger.Log($"Failed to set access - access control is not enabled");
+        return false;
     }
 }
 
@@ -414,9 +432,30 @@ class Program
                     var accessUser = Console.ReadLine();
                     Console.Write("Enter access type (ReadOnly/Editable): ");
                     var accessType = Console.ReadLine();
+
+                    if (string.IsNullOrEmpty(accessSheet) || string.IsNullOrEmpty(accessUser))
+                    {
+                        Console.WriteLine("Sheet name and user name cannot be empty");
+                        break;
+                    }
+
+                    if (accessType != "ReadOnly" && accessType != "Editable")
+                    {
+                        Console.WriteLine("Invalid access type. Please enter either 'ReadOnly' or 'Editable'");
+                        break;
+                    }
+
                     system.EnableAccessControl();
-                    system.SetAccess(accessSheet, accessUser, accessType == "ReadOnly");
-                    Console.WriteLine("Access rights updated");
+                    bool success = system.SetAccess(accessSheet, accessUser, accessType == "ReadOnly");
+
+                    if (success)
+                    {
+                        Console.WriteLine($"Access rights updated successfully for user {accessUser} on sheet {accessSheet}");
+                    }
+                    else
+                    {
+                        Console.WriteLine("Failed to update access rights. Please check if the sheet and user exist.");
+                    }
                     break;
 
                 case "6":
