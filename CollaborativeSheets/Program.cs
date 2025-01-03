@@ -93,9 +93,9 @@ public class RestrictedAccessStrategy : IAccessStrategy
 // Main collaborative system using functional approach
 public class CollaborativeSystem : ISubject
 {
-    private readonly List<IObserver> _observers = new();
-    public readonly Dictionary<string, User> _users = new();
-    private readonly Dictionary<string, Sheet> _sheets = new();
+    private readonly List<IObserver> _observers = new List<IObserver>();
+    private readonly Dictionary<string, User> _users = new Dictionary<string, User>();
+    private readonly Dictionary<string, Sheet> _sheets = new Dictionary<string, Sheet>();
     private IAccessStrategy _accessStrategy = new DefaultAccessStrategy();
 
     // Observer Pattern implementation
@@ -151,6 +151,11 @@ public class CollaborativeSystem : ISubject
         return _sheets.ContainsKey(name)
             ? Option.Some(_sheets[name])
             : Option.None<Sheet>();
+    }
+
+    public bool CheckUserExist(string user)
+    { 
+        return _users.ContainsKey(user); 
     }
 
     // Functional calculation handler
@@ -411,7 +416,65 @@ class Program
                         });
                     break;
 
+
                 case "3":
+                    Console.Write("Enter username and sheet name (e.g., Kevin SheetA) > ");
+                    var checkInput = Console.ReadLine()?.Split(' ');
+
+                    // Validate input format
+                    if (checkInput == null || checkInput.Length != 2)
+                    {
+                        Console.WriteLine("Invalid input format. Please enter both username and sheet name.");
+                        break;
+                    }
+
+                    var checkOwner = checkInput[0];
+                    var checkSheetName = checkInput[1];
+
+                    // Validate empty values
+                    if (string.IsNullOrWhiteSpace(checkOwner) || string.IsNullOrWhiteSpace(checkSheetName))
+                    {
+                        Console.WriteLine("Username and sheet name cannot be empty.");
+                        break;
+                    }
+
+                    // Validate user exists
+                    if (!system.CheckUserExist(checkOwner))
+                    {
+                        Console.WriteLine($"User \"{checkOwner}\" does not exist.");
+                        break;
+                    }
+
+                    system.GetSheet(checkSheetName).Match<bool>(
+                        sheet =>
+                        {
+                            // Validate sheet ownership
+                            if (sheet.Owner != checkOwner)
+                            {
+                                Console.WriteLine($"Sheet \"{checkSheetName}\" does not belong to user \"{checkOwner}\".");
+                                return false;
+                            }
+
+                            Console.WriteLine($"\nSheet content for \"{checkSheetName}\":");
+                            for (int i = 0; i < 3; i++)
+                            {
+                                for (int j = 0; j < 3; j++)
+                                {
+                                    var cell = sheet.Cells.GetValueOrDefault((i, j), new Cell("0", 0));
+                                    Console.Write($"{cell.Value}, ");
+                                }
+                                Console.WriteLine();
+                            }
+                            return true;
+                        },
+                        () =>
+                        {
+                            Console.WriteLine($"Sheet \"{checkSheetName}\" not found.");
+                            return false;
+                        });
+                    break;
+
+                case "4":
                     Console.Write("Enter username and sheet name (e.g., Kevin SheetA) > ");
                     var updateInput = Console.ReadLine()?.Split(' ');
 
@@ -425,14 +488,14 @@ class Program
                     var updateSheet = updateInput[1];
 
                     // Check if user exists
-                    if (!system._users.ContainsKey(updateUser))  // Note: You might need to make _users public or add a method to check user existence
+                    if (!system.CheckUserExist(updateUser))  // Note: You might need to make _users public or add a method to check user existence
                     {
                         Console.WriteLine($"User {updateUser} does not exist. Please create the user first.");
                         break;
                     }
 
                     PrintSheet(system, updateSheet);
-                    Console.Write("> ");
+                    Console.Write("Enter position and value to update (e.g., 1 2 3) > ");
                     var valueInput = Console.ReadLine()?.Split(' ');
 
                     if (valueInput == null || valueInput.Length != 3)
