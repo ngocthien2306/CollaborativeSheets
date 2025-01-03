@@ -3,9 +3,27 @@ using System.Collections.Generic;
 using System.Linq;
 
 // Immutable data structures for functional approach
-public record Cell(string Value, Func<string, double> Evaluate);
+public record Cell(string Expression, double Value)
+{
+    public override string ToString() => Value.ToString();
+}
 public record Sheet(string Name, string Owner, Dictionary<(int, int), Cell> Cells);
-public record User(string Name);
+
+public class User : IObserver
+{
+    public string Name { get; set; }
+    public User(string name)
+    {
+        this.Name = name;
+    }
+
+    public void Update(string sheetName, (int, int) position, string value)
+    {
+        
+        Console.WriteLine($"User {this.Name} received update for sheet {sheetName}: Position {position} changed to {value}");
+        
+    }
+}
 public record AccessRight(bool IsReadOnly);
 
 // Observer Pattern for collaboration
@@ -100,37 +118,80 @@ public class CollaborativeSystem : ISubject
     // Functional calculation handler
     private static double EvaluateExpression(string expr)
     {
-        var tokens = expr.Split(new[] { '+', '-', '*', '/' }, StringSplitOptions.RemoveEmptyEntries);
-        if (tokens.Length == 1) return double.Parse(expr);
-
-        var numbers = tokens.Select(double.Parse).ToList();
-        var operators = expr.Where(c => !char.IsDigit(c) && c != '.' && c != ' ').ToList();
-
-        return operators.Zip(numbers.Skip(1), (op, num) => (op, num))
-            .Aggregate(numbers[0], (acc, tuple) => tuple.op switch
+        try
+        {
+            var expression = expr.Replace(" ", "");
+            if (!expression.Contains("+") && !expression.Contains("-") &&
+                !expression.Contains("*") && !expression.Contains("/"))
             {
-                '+' => acc + tuple.num,
-                '-' => acc - tuple.num,
-                '*' => acc * tuple.num,
-                '/' => acc / tuple.num,
-                _ => throw new ArgumentException("Invalid operator")
-            });
+                return double.Parse(expression);
+            }
+
+            var numbers = new List<double>();
+            var operators = new List<char>();
+            var currentNumber = "";
+
+            foreach (char c in expression)
+            {
+                if (char.IsDigit(c) || c == '.' || (c == '-' && currentNumber == ""))
+                {
+                    currentNumber += c;
+                }
+                else if ("+-*/".Contains(c))
+                {
+                    if (!string.IsNullOrEmpty(currentNumber))
+                    {
+                        numbers.Add(double.Parse(currentNumber));
+                        currentNumber = "";
+                    }
+                    operators.Add(c);
+                }
+            }
+            if (!string.IsNullOrEmpty(currentNumber))
+            {
+                numbers.Add(double.Parse(currentNumber));
+            }
+
+            var result = numbers[0];
+            for (int i = 0; i < operators.Count; i++)
+            {
+                switch (operators[i])
+                {
+                    case '+': result += numbers[i + 1]; break;
+                    case '-': result -= numbers[i + 1]; break;
+                    case '*': result *= numbers[i + 1]; break;
+                    case '/': result /= numbers[i + 1]; break;
+                }
+            }
+            return result;
+        }
+        catch
+        {
+            return 0;
+        }
     }
 
     public Option<Sheet> UpdateCell(string user, string sheetName, int row, int col, string value)
     {
-        if (!_sheets.ContainsKey(sheetName) || !_accessStrategy.CanEdit(user, sheetName))
+        if (!_sheets.ContainsKey(sheetName))
             return Option.None<Sheet>();
 
+        if (!_accessStrategy.CanEdit(user, sheetName))
+        {
+            Console.WriteLine("You have ReadOnly access. Editing is not permitted. Please contact the administrator.");
+            return Option.None<Sheet>();
+        }
+
         var sheet = _sheets[sheetName];
+        var evaluatedValue = EvaluateExpression(value);
         var newCells = new Dictionary<(int, int), Cell>(sheet.Cells)
         {
-            [(row, col)] = new Cell(value, _ => EvaluateExpression(value))
+            [(row, col)] = new Cell(value, evaluatedValue)
         };
 
         var updatedSheet = sheet with { Cells = newCells };
         _sheets[sheetName] = updatedSheet;
-        Notify(sheetName, (row, col), value);
+        Notify(sheetName, (row, col), evaluatedValue.ToString());
         return Option.Some(updatedSheet);
     }
 
@@ -191,7 +252,7 @@ class Program
                 {
                     for (int j = 0; j < 3; j++)
                     {
-                        var cell = sheet.Cells.GetValueOrDefault((i, j), new Cell("0", _ => 0));
+                        var cell = sheet.Cells.GetValueOrDefault((i, j), new Cell("0", 0));
                         Console.Write($"{cell.Value}, ");
                     }
                     Console.WriteLine();
@@ -222,6 +283,8 @@ class Program
             Console.WriteLine("7. Exit");
             Console.WriteLine("----------------------------------");
 
+            Console.Write("Please enter your choice (1-7): ");
+
             var choice = Console.ReadLine();
 
             switch (choice)
@@ -229,7 +292,6 @@ class Program
                 case "1":
                     Console.Write("Enter user name: ");
                     var userName = Console.ReadLine();
-                    Console.Write("> ");
                     system.CreateUser(userName);
                     Console.WriteLine($"Create a user named \"{userName}\".");
                     break;
@@ -255,7 +317,7 @@ class Program
                             {
                                 for (int j = 0; j < 3; j++)
                                 {
-                                    var cell = sheet.Cells.GetValueOrDefault((i, j), new Cell("0", _ => 0));
+                                    var cell = sheet.Cells.GetValueOrDefault((i, j), new Cell("0", 0));
                                     Console.Write($"{cell.Value}, ");
                                 }
                                 Console.WriteLine();
@@ -285,6 +347,7 @@ class Program
                                 sheet => "Updated successfully",
                                 () => "Update failed");
                         Console.WriteLine(updateResult);
+                        PrintSheet(system, updateSheet);
                     }
                     break;
 
