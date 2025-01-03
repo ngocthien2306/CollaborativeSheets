@@ -94,7 +94,7 @@ public class RestrictedAccessStrategy : IAccessStrategy
 public class CollaborativeSystem : ISubject
 {
     private readonly List<IObserver> _observers = new();
-    private readonly Dictionary<string, User> _users = new();
+    public readonly Dictionary<string, User> _users = new();
     private readonly Dictionary<string, Sheet> _sheets = new();
     private IAccessStrategy _accessStrategy = new DefaultAccessStrategy();
 
@@ -211,6 +211,14 @@ public class CollaborativeSystem : ISubject
 
     public Option<Sheet> UpdateCell(string user, string sheetName, int row, int col, string value)
     {
+        // Check if user exists
+        if (!_users.ContainsKey(user))
+        {
+            Logger.Log($"Failed to update cell - user {user} not found");
+            return Option.None<Sheet>();
+        }
+
+        // Check if sheet exists
         if (!_sheets.ContainsKey(sheetName))
         {
             Logger.Log($"Failed to update cell - sheet {sheetName} not found");
@@ -290,7 +298,7 @@ public class Option<T>
     }
 
     public static Option<T> Some(T value) => new(value, true);
-    public static Option<T> None() => new(default, false);
+    public static Option<T> None() => new(default!, false);
 
     public TResult Match<TResult>(Func<T, TResult> some, Func<TResult> none) =>
         _hasValue ? some(_value) : none();
@@ -354,7 +362,7 @@ class Program
                 case "1":
                     Console.Write("Enter user name: ");
                     var userName = Console.ReadLine();
-                    var newUser = system.CreateUser(userName);
+                    var newUser = system.CreateUser(userName!);
                     newUser.Match<bool>(
                         user =>
                         {
@@ -372,57 +380,81 @@ class Program
 
                 case "2":
                     Console.Write("Enter username and sheet name (e.g., Kevin SheetA) > ");
-                    var input = Console.ReadLine().Split(' ');
+                    var input = Console.ReadLine()?.Split(' ');
+
+                    if (input == null || input.Length != 2)
+                    {
+                        Console.WriteLine("Invalid input format. Please enter both username and sheet name.");
+                        break;
+                    }
+
                     var owner = input[0];
                     var sheetName = input[1];
-                    system.CreateSheet(owner, sheetName);
-                    Console.WriteLine($"Create a sheet named \"{sheetName}\" for \"{owner}\".");
-                    break;
 
-                case "3":
-                    Console.Write("Enter username and sheet name (e.g., Kevin SheetA) > ");
-                    var checkInput = Console.ReadLine().Split(' ');
-                    var checkOwner = checkInput[0];
-                    var checkSheetName = checkInput[1];
-                    system.GetSheet(checkSheetName).Match<bool>(
+                    if (string.IsNullOrWhiteSpace(owner) || string.IsNullOrWhiteSpace(sheetName))
+                    {
+                        Console.WriteLine("Username and sheet name cannot be empty.");
+                        break;
+                    }
+
+                    var result = system.CreateSheet(owner, sheetName);
+                    result.Match<bool>(
                         sheet =>
                         {
-                            for (int i = 0; i < 3; i++)
-                            {
-                                for (int j = 0; j < 3; j++)
-                                {
-                                    var cell = sheet.Cells.GetValueOrDefault((i, j), new Cell("0", 0));
-                                    Console.Write($"{cell.Value}, ");
-                                }
-                                Console.WriteLine();
-                            }
+                            Console.WriteLine($"Sheet named \"{sheetName}\" created successfully for user \"{owner}\".");
                             return true;
                         },
                         () =>
                         {
-                            Console.WriteLine("Sheet not found");
+                            Console.WriteLine($"Failed to create sheet. Please check if user \"{owner}\" exists.");
                             return false;
                         });
                     break;
 
-                case "4":
+                case "3":
                     Console.Write("Enter username and sheet name (e.g., Kevin SheetA) > ");
-                    var updateInput = Console.ReadLine().Split(' ');
+                    var updateInput = Console.ReadLine()?.Split(' ');
+
+                    if (updateInput == null || updateInput.Length < 2)
+                    {
+                        Console.WriteLine("Invalid input. Please enter user and sheet name.");
+                        break;
+                    }
+
                     var updateUser = updateInput[0];
                     var updateSheet = updateInput[1];
-                    PrintSheet(system, updateSheet);
-                    Console.Write("Enter position and value to update (e.g., 1 2 3) > ");
-                    var valueInput = Console.ReadLine().Split(' ');
-                    if (valueInput.Length == 3)
+
+                    // Check if user exists
+                    if (!system._users.ContainsKey(updateUser))  // Note: You might need to make _users public or add a method to check user existence
                     {
-                        string updateResult = system.UpdateCell(updateUser, updateSheet,
-                            int.Parse(valueInput[0]), int.Parse(valueInput[1]), valueInput[2])
-                            .Match<string>(
-                                sheet => "Updated successfully",
-                                () => "Update failed");
-                        Console.WriteLine(updateResult);
-                        PrintSheet(system, updateSheet);
+                        Console.WriteLine($"User {updateUser} does not exist. Please create the user first.");
+                        break;
                     }
+
+                    PrintSheet(system, updateSheet);
+                    Console.Write("> ");
+                    var valueInput = Console.ReadLine()?.Split(' ');
+
+                    if (valueInput == null || valueInput.Length != 3)
+                    {
+                        Console.WriteLine("Invalid input. Please enter row column value.");
+                        break;
+                    }
+
+                    if (!int.TryParse(valueInput[0], out int row) || !int.TryParse(valueInput[1], out int col))
+                    {
+                        Console.WriteLine("Invalid row or column. Please enter numeric values.");
+                        break;
+                    }
+
+                    string updateResult = system.UpdateCell(updateUser, updateSheet, row, col, valueInput[2])
+                        .Match<string>(
+                            sheet => "Updated successfully",
+                            () => "Update failed - Check if user exists and has permission to edit this sheet"
+                        );
+
+                    Console.WriteLine(updateResult);
+                    PrintSheet(system, updateSheet);
                     break;
 
                 case "5":
@@ -465,8 +497,8 @@ class Program
                     var shareSheet = Console.ReadLine();
                     Console.Write("Enter user to share with: ");
                     var shareWith = Console.ReadLine();
-                    system.CreateUser(shareWith);
-                    system.SetAccess(shareSheet, shareWith, false);
+                    system.CreateUser(shareWith!);
+                    system.SetAccess(shareSheet!, shareWith!, false);
                     Console.WriteLine($"{shareOwner} shared sheet {shareSheet} with {shareWith}");
                     break;
 

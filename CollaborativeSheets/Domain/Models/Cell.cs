@@ -68,7 +68,7 @@ namespace CollaborativeSheets.Domain.Models
         }
 
         public static Option<T> Some(T value) => new Option<T>(value, true);
-        public static Option<T> None => new Option<T>(default, false);
+        public static Option<T> None => new Option<T>(default!, false);
 
         public Option<TResult> Map<TResult>(Func<T, TResult> mapper) =>
             hasValue ? Option<TResult>.Some(mapper(value)) : Option<TResult>.None;
