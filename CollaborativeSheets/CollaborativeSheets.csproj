@@ -7,13 +7,4 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
-  <ItemGroup>
-    <Folder Include="Application\EventHandlers\" />
-    <Folder Include="Application\Services\" />
-    <Folder Include="Domain\Interfaces\" />
-    <Folder Include="Domain\Commands\" />
-    <Folder Include="Infrastructure\Repositories\" />
-    <Folder Include="UI\" />
-  </ItemGroup>
-
 </Project>
