@@ -1,0 +1,1000 @@
+
+==================================================
+File: Program.cs
+Path: .\Program.cs
+==================================================
+
+﻿using CollaborativeSheets.Application.Common;
+using CollaborativeSheets.Application.Services;
+using CollaborativeSheets.Domain.Entities;
+
+namespace CollaborativeSpreadsheet
+{
+    public class Program
+    {
+        private static void DisplayMenu()
+        {
+            Console.WriteLine("\n---------------Menu---------------");
+            Console.WriteLine("1. Create a user");
+            Console.WriteLine("2. Create a sheet");
+            Console.WriteLine("3. Check a sheet");
+            Console.WriteLine("4. Change a value in a sheet");
+            Console.WriteLine("5. Change a sheet's access right");
+            Console.WriteLine("6. Collaborate with another user");
+            Console.WriteLine("7. Exit");
+            Console.WriteLine("----------------------------------");
+            Console.Write("Please enter your choice (1-7): ");
+        }
+
+        private static void PrintSheet(CollaborativeSystem system, string sheetName)
+        {
+            system.GetSheet(sheetName).Match<bool>(
+                sheet =>
+                {
+                    Console.WriteLine($"\nSheet content for \"{sheetName}\":");
+                    for (int i = 0; i < 3; i++)
+                    {
+                        for (int j = 0; j < 3; j++)
+                        {
+                            var cell = sheet.Cells.GetValueOrDefault((i, j), new Cell("0", 0));
+                            Console.Write($"{cell.Value}, ");
+                        }
+                        Console.WriteLine();
+                    }
+                    return true;
+                },
+                () =>
+                {
+                    Console.WriteLine("Sheet not found");
+                    return false;
+                });
+        }
+
+        private static void HandleCreateUser(CollaborativeSystem system)
+        {
+            Console.Write("Enter user name: ");
+            var userName = Console.ReadLine();
+
+            if (string.IsNullOrWhiteSpace(userName))
+            {
+                Console.WriteLine("User name cannot be empty.");
+                return;
+            }
+
+            var newUser = system.CreateUser(userName);
+            newUser.Match<bool>(
+                user =>
+                {
+                    // system.Attach(user);
+                    Console.WriteLine($"Created and attached user {userName}");
+                    return true;
+                },
+                () =>
+                {
+                    Console.WriteLine("Failed to create user - User may already exist");
+                    return false;
+                });
+        }
+
+        private static void HandleCreateSheet(CollaborativeSystem system)
+        {
+            Console.Write("Enter username and sheet name (e.g., Kevin SheetA) > ");
+            var input = Console.ReadLine()?.Split(' ');
+
+            if (input?.Length != 2)
+            {
+                Console.WriteLine("Invalid input format. Please enter both username and sheet name.");
+                return;
+            }
+
+            var owner = input[0];
+            var sheetName = input[1];
+
+            if (string.IsNullOrWhiteSpace(owner) || string.IsNullOrWhiteSpace(sheetName))
+            {
+                Console.WriteLine("Username and sheet name cannot be empty.");
+                return;
+            }
+
+            system.CreateSheet(owner, sheetName).Match<bool>(
+                sheet =>
+                {
+                    Console.WriteLine($"Sheet named \"{sheetName}\" created successfully for user \"{owner}\".");
+                    return true;
+                },
+                () =>
+                {
+                    Console.WriteLine($"Failed to create sheet. Please check if user \"{owner}\" exists.");
+                    return false;
+                });
+        }
+
+        private static void HandleCheckSheet(CollaborativeSystem system)
+        {
+            Console.Write("Enter username and sheet name (e.g., Kevin SheetA) > ");
+            var checkInput = Console.ReadLine()?.Split(' ');
+
+            if (checkInput?.Length != 2)
+            {
+                Console.WriteLine("Invalid input format. Please enter both username and sheet name.");
+                return;
+            }
+
+            var checkOwner = checkInput[0];
+            var checkSheetName = checkInput[1];
+
+            if (string.IsNullOrWhiteSpace(checkOwner) || string.IsNullOrWhiteSpace(checkSheetName))
+            {
+                Console.WriteLine("Username and sheet name cannot be empty.");
+                return;
+            }
+
+            if (!system.CheckUserAndSheetExist(checkOwner, checkSheetName))
+            {
+                Console.WriteLine($"User \"{checkOwner}\" does not exist.");
+                return;
+            }
+
+            system.GetSheet(checkSheetName).Match<bool>(
+                sheet =>
+                {
+                    if (sheet.Owner != checkOwner)
+                    {
+                        Console.WriteLine($"Sheet \"{checkSheetName}\" does not belong to user \"{checkOwner}\".");
+                        return false;
+                    }
+
+                    PrintSheet(system, checkSheetName);
+                    return true;
+                },
+                () =>
+                {
+                    Console.WriteLine($"Sheet \"{checkSheetName}\" not found.");
+                    return false;
+                });
+        }
+
+        private static void HandleUpdateCell(CollaborativeSystem system)
+        {
+            Console.Write("Enter username and sheet name (e.g., Kevin SheetA) > ");
+            var updateInput = Console.ReadLine()?.Split(' ');
+
+            if (updateInput?.Length != 2)
+            {
+                Console.WriteLine("Invalid input. Please enter user and sheet name.");
+                return;
+            }
+
+            var updateUser = updateInput[0];
+            var updateSheet = updateInput[1];
+
+            if (!system.CheckUserAndSheetExist(updateUser, updateSheet))
+            {
+                Console.WriteLine($"User {updateUser} or Sheet {updateSheet} does not exist. Please create the user and sheet first.");
+                return;
+            }
+
+
+            PrintSheet(system, updateSheet);
+
+            Console.Write("Enter position and value to update (row column value, e.g., 1 2 3) > ");
+            var valueInput = Console.ReadLine()?.Split(' ');
+
+            if (valueInput?.Length != 3)
+            {
+                Console.WriteLine("Invalid input. Please enter row column value.");
+                return;
+            }
+
+            if (!int.TryParse(valueInput[0], out int row) ||
+                !int.TryParse(valueInput[1], out int col))
+            {
+                Console.WriteLine("Invalid row or column. Please enter numeric values.");
+                return;
+            }
+
+            if (row < 0 || row > 2 || col < 0 || col > 2)
+            {
+                Console.WriteLine("Row and column must be between 0 and 2.");
+                return;
+            }
+
+            string updateResult = system.UpdateCell(updateUser, updateSheet, row, col, valueInput[2])
+                .Match<string>(
+                    sheet => "Updated successfully",
+                    () => "Update failed - Check if user exists and has permission to edit this sheet"
+                );
+
+            Console.WriteLine(updateResult);
+            PrintSheet(system, updateSheet);
+        }
+
+        private static void HandleAccessRights(CollaborativeSystem system)
+        {
+            Console.Write("Enter sheet name: ");
+            var accessSheet = Console.ReadLine();
+            Console.Write("Enter user name: ");
+            var accessUser = Console.ReadLine();
+            Console.Write("Enter access type (ReadOnly/Editable): ");
+            var accessType = Console.ReadLine();
+
+            if (string.IsNullOrWhiteSpace(accessSheet) ||
+                string.IsNullOrWhiteSpace(accessUser))
+            {
+                Console.WriteLine("Sheet name and user name cannot be empty");
+                return;
+            }
+
+            if (accessType != "ReadOnly" && accessType != "Editable")
+            {
+                Console.WriteLine("Invalid access type. Please enter either 'ReadOnly' or 'Editable'");
+                return;
+            }
+
+            system.EnableAccessControl();
+            if (accessType == "ReadOnly")
+            {
+                // Execute RevokeAccess when right is ReadOnly
+                bool success = system.RevokeAccess(accessSheet, accessUser);
+                if (success)
+                {
+                    Console.WriteLine($"Successfully revoked edit access for user {accessUser} on sheet {accessSheet}. Sheet is now ReadOnly.");
+                }
+                else
+                {
+                    Console.WriteLine("Failed to revoke access. Please check if the sheet exists and user has access.");
+                }
+            }
+            else // accessType == "Editable"
+            {
+                bool success = system.SetAccess(accessSheet, accessUser, false);
+                if (success)
+                {
+                    Console.WriteLine($"Edit access granted for user {accessUser} on sheet {accessSheet}");
+                }
+                else
+                {
+                    Console.WriteLine("Failed to grant edit access. Please check if the sheet and user exist.");
+                }
+            }
+        }
+
+        private static void HandleCollaboration(CollaborativeSystem system)
+        {
+            Console.Write("Enter sheet owner: ");
+            var shareOwner = Console.ReadLine();
+            Console.Write("Enter sheet name: ");
+            var shareSheet = Console.ReadLine();
+            Console.Write("Enter user to share with: ");
+            var shareWith = Console.ReadLine();
+
+            if (string.IsNullOrWhiteSpace(shareOwner) ||
+                string.IsNullOrWhiteSpace(shareSheet) ||
+                string.IsNullOrWhiteSpace(shareWith))
+            {
+                Console.WriteLine("All fields must be filled.");
+                return;
+            }
+
+            // Check if owner exists
+            var ownerResult = system.GetUser(shareOwner);
+            if (ownerResult.Match(
+                owner => false, 
+                () =>
+                {
+                    Console.WriteLine($"Sheet owner {shareOwner} does not exist.");
+                    return true; 
+                }))
+            {
+                return;
+            }
+
+            // Check if sheet exists
+            var sheetResult = system.GetSheet(shareSheet);
+            if (sheetResult.Match(
+                sheet =>
+                {
+                    // Verify ownership
+                    if (sheet.Owner.ToLower() != shareOwner.ToLower())
+                    {
+                        Console.WriteLine($"Sheet {shareSheet} does not belong to {shareOwner}");
+                        return true; 
+                    }
+                    return false;
+                },
+                () =>
+                {
+                    Console.WriteLine($"Sheet {shareSheet} does not exist.");
+                    return true; 
+                }))
+            {
+                return;
+            }
+
+            system.EnableAccessControl();
+
+            // Get or create collaborator user
+            system.CreateUser(shareWith);
+
+            // First make sure owner is attached as observer if not already
+            system.GetUser(shareOwner).Match(
+                owner => {
+                    system.Attach(owner, shareSheet);
+                    return true;
+                },
+                () => false
+            );
+
+            // Add attach the collaborator
+            system.GetUser(shareWith).Match(
+                user => {
+                    system.SetAccess(shareSheet, shareWith, false);
+                    system.Attach(user, shareSheet);
+                    Console.WriteLine($"{shareOwner} shared sheet {shareSheet} with {shareWith}");
+                    return true;
+                },
+                () => {
+                    Console.WriteLine($"Failed to share sheet with {shareWith}");
+                    return false;
+                });
+        }
+
+        static void Main()
+        {
+            var system = new CollaborativeSystem();
+            // system.EnableAccessControl();
+            var running = true;
+
+            Console.WriteLine("Welcome to Collaborative Spreadsheet System!");
+
+            while (running)
+            {
+                try
+                {
+                    DisplayMenu();
+                    var choice = Console.ReadLine();
+
+                    Console.WriteLine(); // Add a blank line for better readability
+
+                    switch (choice)
+                    {
+                        case "1":
+                            HandleCreateUser(system);
+                            break;
+
+                        case "2":
+                            HandleCreateSheet(system);
+                            break;
+
+                        case "3":
+                            HandleCheckSheet(system);
+                            break;
+
+                        case "4":
+                            HandleUpdateCell(system);
+                            break;
+
+                        case "5":
+                            HandleAccessRights(system);
+                            break;
+
+                        case "6":
+                            HandleCollaboration(system);
+                            break;
+
+                        case "7":
+                            Logger.Log("System shutdown");
+                            running = false;
+                            Console.WriteLine("Thank you for using Collaborative Spreadsheet System!");
+                            break;
+
+                        default:
+                            Console.WriteLine("Invalid choice. Please enter a number between 1 and 7.");
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"An error occurred: {ex.Message}");
+                    Logger.Log($"Error: {ex.Message}");
+                }
+            }
+        }
+    }
+}
+
+
+==================================================
+File: Logger.cs
+Path: .\Application\Common\Logger.cs
+==================================================
+
+﻿namespace CollaborativeSheets.Application.Common
+{
+    public class Logger
+    {
+        private static readonly string LogFile = "collaborative_system.log";
+        private static readonly object LockObj = new object();
+
+        public static void Log(string message)
+        {
+            lock (LockObj)
+            {
+                try
+                {
+                    string logMessage = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} - {message}";
+                    File.AppendAllText(LogFile, logMessage + Environment.NewLine);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error writing to log file: {ex.Message}");
+                }
+            }
+        }
+    }
+
+}
+
+
+
+==================================================
+File: CollaborativeSystem.cs
+Path: .\Application\Services\CollaborativeSystem.cs
+==================================================
+
+﻿using CollaborativeSheets.Application.Common;
+using CollaborativeSheets.Application.Strategies;
+using CollaborativeSheets.Domain.Entities;
+using CollaborativeSheets.Domain.Interfaces;
+using CollaborativeSheets.Domain.ValueObjects;
+
+namespace CollaborativeSheets.Application.Services
+{
+    public class CollaborativeSystem : ISubject
+    {
+        private readonly Dictionary<string, HashSet<IObserver>> _sheetObservers = new Dictionary<string, HashSet<IObserver>>(); // can be use new() instead of new Dictionary<string, HashSet<IObserver>>()
+        private readonly Dictionary<string, User> _users = new Dictionary<string, User>();
+        private readonly Dictionary<string, Sheet> _sheets = new Dictionary<string, Sheet>();
+        private IAccessStrategy _accessStrategy = new DefaultAccessStrategy();
+
+        // Strategy Pattern usage
+        public void EnableAccessControl()
+        {
+            _accessStrategy = new RestrictedAccessStrategy();
+        }
+
+        public void DisableAccessControl()
+        {
+            _accessStrategy = new DefaultAccessStrategy();
+        }
+
+        // Observer Pattern implementation
+        public void Attach(IObserver observer, string sheetName)
+        {
+            if (!_sheetObservers.ContainsKey(sheetName))
+            {
+                _sheetObservers[sheetName] = new HashSet<IObserver>();
+            }
+            _sheetObservers[sheetName].Add(observer);
+            Logger.Log($"Observer {(observer as User)?.Name ?? "Unknown"} attached to sheet {sheetName}");
+        }
+
+        public void Detach(IObserver observer, string sheetName)
+        {
+            if (_sheetObservers.ContainsKey(sheetName))
+            {
+                _sheetObservers[sheetName].Remove(observer);
+                Logger.Log($"Observer {(observer as User)?.Name ?? "Unknown"} detached from sheet {sheetName}");
+            }
+        }
+
+        public void Notify(string sheetName, (int, int) position, string value)
+        {
+            if (_sheetObservers.ContainsKey(sheetName))
+            {
+                foreach (var observer in _sheetObservers[sheetName])
+                {
+                    observer.Update(sheetName, position, value);
+                }
+            }
+        }
+
+        // Functional operations using LINQ and immutable data
+        public Option<User> CreateUser(string name)
+        {
+            if (!_users.ContainsKey(name))
+            {
+                var user = new User(name);
+                _users[name] = user;
+                Logger.Log($"User {name} created");
+                return Option.Some(user);
+            }
+            Logger.Log($"Failed to create user {name} - user already exists");
+            return Option.None<User>();
+        }
+
+        public Option<Sheet> CreateSheet(string user, string name)
+        {
+            if (_users.ContainsKey(user) && !_sheets.ContainsKey(name))
+            {
+                var sheet = new Sheet(name, user, new Dictionary<(int, int), Cell>());
+                _sheets[name] = sheet;
+                Logger.Log($"Sheet {name} created by user {user}");
+                return Option.Some(sheet);
+            }
+            Logger.Log($"Failed to create sheet {name} for user {user}");
+            return Option.None<Sheet>();
+        }
+
+        public Option<Sheet> GetSheet(string name)
+        {
+            return _sheets.ContainsKey(name)
+                ? Option.Some(_sheets[name])
+                : Option.None<Sheet>();
+        }
+
+        public bool CheckUserAndSheetExist(string user, string sheetName)
+        {
+            return CheckUserExist(user) && _sheets.ContainsKey(sheetName);
+        }
+
+        public Option<User> GetUser(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                Logger.Log($"Attempted to get user with empty name");
+                return Option.None<User>();
+            }
+
+            if (_users.TryGetValue(name, out var user))
+            {
+                Logger.Log($"Retrieved user: {name}");
+                return Option.Some(user);
+            }
+
+            Logger.Log($"Failed to get user: {name} - user does not exist");
+            return Option.None<User>();
+        }
+
+        // Helper method to check if user exists
+        public bool CheckUserExist(string name)
+        {
+            return !string.IsNullOrWhiteSpace(name) && _users.ContainsKey(name);
+        }
+
+        // Functional calculation handler
+        private static double EvaluateExpression(string expr)
+        {
+            try
+            {
+                var expression = expr.Replace(" ", "");
+                if (!expression.Contains("+") && !expression.Contains("-") &&
+                    !expression.Contains("*") && !expression.Contains("/"))
+                {
+                    return double.Parse(expression);
+                }
+
+                var numbers = new List<double>();
+                var operators = new List<char>();
+                var currentNumber = "";
+
+                foreach (char c in expression)
+                {
+                    if (char.IsDigit(c) || c == '.' || (c == '-' && currentNumber == ""))
+                    {
+                        currentNumber += c;
+                    }
+                    else if ("+-*/".Contains(c))
+                    {
+                        if (!string.IsNullOrEmpty(currentNumber))
+                        {
+                            numbers.Add(double.Parse(currentNumber));
+                            currentNumber = "";
+                        }
+                        operators.Add(c);
+                    }
+                }
+                if (!string.IsNullOrEmpty(currentNumber))
+                {
+                    numbers.Add(double.Parse(currentNumber));
+                }
+
+                var result = numbers[0];
+                for (int i = 0; i < operators.Count; i++)
+                {
+                    switch (operators[i])
+                    {
+                        case '+': result += numbers[i + 1]; break;
+                        case '-': result -= numbers[i + 1]; break;
+                        case '*': result *= numbers[i + 1]; break;
+                        case '/': result /= numbers[i + 1]; break;
+                    }
+                }
+                return result;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        public Option<Sheet> UpdateCell(string user, string sheetName, int row, int col, string value)
+        {
+            // Check if user exists
+            if (!_users.ContainsKey(user))
+            {
+                Logger.Log($"Failed to update cell - user {user} not found");
+                return Option.None<Sheet>();
+            }
+
+            // Check if sheet exists
+            if (!_sheets.ContainsKey(sheetName))
+            {
+                Logger.Log($"Failed to update cell - sheet {sheetName} not found");
+                return Option.None<Sheet>();
+            }
+
+            if (!_accessStrategy.CanEdit(user, sheetName))
+            {
+                Logger.Log($"Access denied - user {user} attempted to edit sheet {sheetName}");
+                Console.WriteLine("You have ReadOnly access. Editing is not permitted. Please contact the administrator.");
+                return Option.None<Sheet>();
+            }
+
+            var sheet = _sheets[sheetName];
+            var evaluatedValue = EvaluateExpression(value);
+            var newCells = new Dictionary<(int, int), Cell>(sheet.Cells)
+            {
+                [(row, col)] = new Cell(value, evaluatedValue)
+            };
+
+            var updatedSheet = sheet with { Cells = newCells };
+            _sheets[sheetName] = updatedSheet;
+            Logger.Log($"Cell updated in sheet {sheetName} at position ({row},{col}) with value {value} by user {user}");
+            Notify(sheetName, (row, col), evaluatedValue.ToString());
+            return Option.Some(updatedSheet);
+        }
+
+
+        public bool RevokeAccess(string sheetName, string userName)
+        {
+            if (_accessStrategy is RestrictedAccessStrategy strategy)
+            {
+                if (_users.TryGetValue(userName, out var user))
+                {
+                    strategy.SetAccess(userName, sheetName, true); // Set to ReadOnly
+                    Detach(user, sheetName); // Remove from observers
+                    Logger.Log($"Access revoked for user {userName} on sheet {sheetName}");
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public bool SetAccess(string sheetName, string user, bool isReadOnly)
+        {
+            // Validate if sheet exists
+            if (!_sheets.ContainsKey(sheetName))
+            {
+                Logger.Log($"Failed to set access - sheet {sheetName} not found");
+                return false;
+            }
+
+            // Validate if user exists 
+            if (!CheckUserExist(user))
+            {
+                Logger.Log($"Failed to set access - user {user} not found");
+                return false;
+            }
+
+            if (_accessStrategy is RestrictedAccessStrategy strategy)
+            {
+                strategy.SetAccess(user, sheetName, isReadOnly);
+                Logger.Log($"Access rights updated for user {user} on sheet {sheetName} - ReadOnly: {isReadOnly}");
+                return true;
+            }
+
+            Logger.Log($"Failed to set access - access control is not enabled");
+            return false;
+        }
+    }
+
+}
+
+
+
+==================================================
+File: DefaultAccessStrategy.cs
+Path: .\Application\Strategies\DefaultAccessStrategy.cs
+==================================================
+
+﻿using CollaborativeSheets.Domain.Interfaces;
+
+namespace CollaborativeSheets.Application.Strategies
+{
+    public class DefaultAccessStrategy : IAccessStrategy
+    {
+        public bool CanEdit(string user, string sheetName) => true;
+    }
+
+}
+
+
+
+==================================================
+File: RestrictedAccessStrategy.cs
+Path: .\Application\Strategies\RestrictedAccessStrategy.cs
+==================================================
+
+﻿using CollaborativeSheets.Domain.Entities;
+using CollaborativeSheets.Domain.Interfaces;
+
+namespace CollaborativeSheets.Application.Strategies
+{
+    public class RestrictedAccessStrategy : IAccessStrategy
+    {
+        private readonly Dictionary<(string, string), AccessRight> _rights = new();
+
+        public void SetAccess(string user, string sheetName, bool isReadOnly)
+        {
+            _rights[(user, sheetName)] = new AccessRight(isReadOnly);
+        }
+
+        public bool CanEdit(string user, string sheetName)
+        {
+            return !_rights.ContainsKey((user, sheetName)) ||
+                   !_rights[(user, sheetName)].IsReadOnly;
+        }
+    }
+
+}
+
+
+
+==================================================
+File: AccessRight.cs
+Path: .\Domain\Entities\AccessRight.cs
+==================================================
+
+﻿namespace CollaborativeSheets.Domain.Entities
+{
+    public record AccessRight(bool IsReadOnly);
+}
+
+
+
+==================================================
+File: Cell.cs
+Path: .\Domain\Entities\Cell.cs
+==================================================
+
+﻿namespace CollaborativeSheets.Domain.Entities
+{
+    public record Cell(string Expression, double Value)
+    {
+        public override string ToString() => Value.ToString();
+    }
+}
+
+
+
+==================================================
+File: Sheet.cs
+Path: .\Domain\Entities\Sheet.cs
+==================================================
+
+﻿namespace CollaborativeSheets.Domain.Entities
+{
+    public record Sheet(string Name, string Owner, Dictionary<(int, int), Cell> Cells);
+}
+
+
+
+==================================================
+File: User.cs
+Path: .\Domain\Entities\User.cs
+==================================================
+
+﻿
+using CollaborativeSheets.Domain.Interfaces;
+
+namespace CollaborativeSheets.Domain.Entities
+{
+    public class User : IObserver
+    {
+        public string Name { get; }
+
+        public User(string name)
+        {
+            Name = name;
+        }
+
+        public void Update(string sheetName, (int, int) position, string value)
+        {
+            Console.WriteLine($"User {Name} received update for sheet {sheetName}: Position {position} changed to {value}");
+
+        }
+    }
+}
+
+
+
+==================================================
+File: IAccessStrategy.cs
+Path: .\Domain\Interfaces\IAccessStrategy.cs
+==================================================
+
+﻿namespace CollaborativeSheets.Domain.Interfaces
+{
+    public interface IAccessStrategy
+    {
+        bool CanEdit(string user, string sheetName);
+    }
+}
+
+
+
+==================================================
+File: IObserver.cs
+Path: .\Domain\Interfaces\IObserver.cs
+==================================================
+
+﻿namespace CollaborativeSheets.Domain.Interfaces
+{
+    public interface IObserver
+    {
+        void Update(string sheetName, (int, int) position, string value);
+    }
+}
+
+
+
+==================================================
+File: ISubject.cs
+Path: .\Domain\Interfaces\ISubject.cs
+==================================================
+
+﻿namespace CollaborativeSheets.Domain.Interfaces
+{
+    public interface ISubject
+    {
+        void Attach(IObserver observer, string sheetName);
+        void Detach(IObserver observer, string sheetName);
+        void Notify(string sheetName, (int, int) position, string value);
+    }
+}
+
+
+
+==================================================
+File: Option.cs
+Path: .\Domain\ValueObjects\Option.cs
+==================================================
+
+﻿namespace CollaborativeSheets.Domain.ValueObjects
+{
+    public class Option<T>
+    {
+        private readonly T _value;
+        private readonly bool _hasValue;
+
+        private Option(T value, bool hasValue)
+        {
+            _value = value;
+            _hasValue = hasValue;
+        }
+
+        public static Option<T> Some(T value) => new(value, true);
+        public static Option<T> None() => new(default!, false);
+
+        public TResult Match<TResult>(Func<T, TResult> some, Func<TResult> none) =>
+            _hasValue ? some(_value) : none();
+    }
+
+    public static class Option
+    {
+        public static Option<T> Some<T>(T value) => Option<T>.Some(value);
+        public static Option<T> None<T>() => Option<T>.None();
+    }
+
+}
+
+
+
+==================================================
+File: InMemoryStorage.cs
+Path: .\Infrastructure\Persistence\InMemoryStorage.cs
+==================================================
+
+﻿using CollaborativeSheets.Domain.Entities;
+using CollaborativeSheets.Domain.ValueObjects;
+
+namespace CollaborativeSheets.Infrastructure.Persistence
+{
+    public class InMemoryStorage
+    {
+        private readonly Dictionary<string, User> _users = new();
+        private readonly Dictionary<string, Sheet> _sheets = new();
+
+        public bool TryAddUser(string name, User user)
+        {
+            if (_users.ContainsKey(name)) return false;
+            _users[name] = user;
+            return true;
+        }
+
+        public bool TryAddSheet(string name, Sheet sheet)
+        {
+            if (_sheets.ContainsKey(name)) return false;
+            _sheets[name] = sheet;
+            return true;
+        }
+
+        public Option<User> GetUser(string name) =>
+            _users.ContainsKey(name) ? Option.Some(_users[name]) : Option.None<User>();
+
+        public Option<Sheet> GetSheet(string name) =>
+            _sheets.ContainsKey(name) ? Option.Some(_sheets[name]) : Option.None<Sheet>();
+    }
+}
+
+
+
+==================================================
+File: .NETCoreApp,Version=v8.0.AssemblyAttributes.cs
+Path: .\obj\Debug\net8.0\.NETCoreApp,Version=v8.0.AssemblyAttributes.cs
+==================================================
+
+// <autogenerated />
+using System;
+using System.Reflection;
+[assembly: global::System.Runtime.Versioning.TargetFrameworkAttribute(".NETCoreApp,Version=v8.0", FrameworkDisplayName = ".NET 8.0")]
+
+
+
+==================================================
+File: CollaborativeSheets.AssemblyInfo.cs
+Path: .\obj\Debug\net8.0\CollaborativeSheets.AssemblyInfo.cs
+==================================================
+
+//------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//     Runtime Version:4.0.30319.42000
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+//------------------------------------------------------------------------------
+
+using System;
+using System.Reflection;
+
+[assembly: System.Reflection.AssemblyCompanyAttribute("CollaborativeSheets")]
+[assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
+[assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+664afcb33afa9ed2c9b7c7ea1a2145569d253451")]
+[assembly: System.Reflection.AssemblyProductAttribute("CollaborativeSheets")]
+[assembly: System.Reflection.AssemblyTitleAttribute("CollaborativeSheets")]
+[assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
+
+// Generated by the MSBuild WriteCodeFragment class.
+
+
+
+
+==================================================
+File: CollaborativeSheets.GlobalUsings.g.cs
+Path: .\obj\Debug\net8.0\CollaborativeSheets.GlobalUsings.g.cs
+==================================================
+
+// <auto-generated/>
+global using global::System;
+global using global::System.Collections.Generic;
+global using global::System.IO;
+global using global::System.Linq;
+global using global::System.Net.Http;
+global using global::System.Threading;
+global using global::System.Threading.Tasks;
+
+
